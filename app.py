@@ -1,8 +1,3 @@
-import sys
-if sys.version_info >= (3, 12):
-    import warnings
-    warnings.warn("Python 3.12+ may have compatibility issues with some packages. "
-                 "Consider using Python 3.11 for this application.")
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -51,7 +46,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state variables
 def initialize_session_state():
     """Initialize all session state variables"""
     defaults = {
@@ -76,7 +70,11 @@ def initialize_session_state():
         'report_status': "ready",
         'view_pdf_report': False,
         'advanced_charts': None,
-        'navigation_triggered': False
+        'navigation_triggered': False,
+        'charts_generated': False,
+        'last_chart_generation': None,
+        'pdf_generation_in_progress': False,
+        'pdf_generated': False
     }
     
     for key, value in defaults.items():
@@ -86,12 +84,11 @@ def initialize_session_state():
 # Initialize session state
 initialize_session_state()
 
-
-def generate_comprehensive_pdf_report(profile, chart_insights, df):
-    """Generate comprehensive PDF report with all data and visualizations"""
+def generate_pdf(profile, chart_insights, df):
+    """Generate PDF report without chart images to ensure fast completion"""
     try:
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30, bottomMargin=30)
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=20)
         
         styles = getSampleStyleSheet()
         story = []
@@ -100,8 +97,8 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
-            fontSize=24,
-            spaceAfter=30,
+            fontSize=20,
+            spaceAfter=20,
             alignment=1,
             textColor=colors.HexColor('#1f77b4')
         )
@@ -111,18 +108,9 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
         story.append(Spacer(1, 20))
         
         # 1. DATASET OVERVIEW
-        section_title = ParagraphStyle(
-            'SectionTitle',
-            parent=styles['Heading2'],
-            fontSize=16,
-            spaceAfter=12,
-            textColor=colors.HexColor('#1f77b4')
-        )
-        
-        story.append(Paragraph("1. DATASET OVERVIEW", section_title))
+        story.append(Paragraph("1. DATASET OVERVIEW", styles['Heading2']))
         story.append(Spacer(1, 10))
         
-        # Basic dataset information
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
         
@@ -134,13 +122,12 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
             ["Memory Usage", f"{df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"]
         ]
         
-        overview_table = Table(overview_data, colWidths=[2.5*inch, 2*inch])
+        overview_table = Table(overview_data, colWidths=[2*inch, 2*inch])
         overview_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f2f6')),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -149,11 +136,11 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
         
         # 2. DATA PROFILE DETAILS
         if profile:
-            story.append(Paragraph("2. DATA PROFILE ANALYSIS", section_title))
+            story.append(Paragraph("2. DATA PROFILE ANALYSIS", styles['Heading2']))
             story.append(Spacer(1, 10))
             
-            # 2.1 Data Overview Table
-            story.append(Paragraph("2.1 Data Overview", styles['Heading3']))
+            # Data Overview Table
+            story.append(Paragraph("Data Overview", styles['Heading3']))
             if 'overview' in profile and not profile['overview'].empty:
                 overview_data = [["Column", "Non-Null Count", "Null Count", "Data Type"]]
                 for _, row in profile['overview'].iterrows():
@@ -164,26 +151,26 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
                         str(row['Data Type'])
                     ])
                 
-                profile_table = Table(overview_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch])
+                profile_table = Table(overview_data, repeatRows=1)
                 profile_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f9f9f9')),
                     ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8)
+                    ('FONTSIZE', (0, 0), (-1, -1), 7)
                 ]))
                 story.append(profile_table)
                 story.append(Spacer(1, 15))
             
-            # 2.2 Missing Values Analysis
-            story.append(Paragraph("2.2 Missing Values Analysis", styles['Heading3']))
+            # Missing Values Analysis
+            story.append(Paragraph("Missing Values Analysis", styles['Heading3']))
             if 'missing_values' in profile and not profile['missing_values'].empty:
                 missing_data = [["Column", "Missing Values", "Percentage"]]
                 for _, row in profile['missing_values'].iterrows():
                     missing_data.append([str(row['Column']), str(row['Missing Values']), f"{row['Percentage']:.2f}%"])
                 
-                missing_table = Table(missing_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+                missing_table = Table(missing_data, repeatRows=1)
                 missing_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -194,47 +181,27 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
                 story.append(missing_table)
                 story.append(Spacer(1, 15))
         
-        # 3. VISUAL ANALYSIS WITH CHARTS AND INSIGHTS
+        # 3. VISUAL ANALYSIS - TEXT ONLY (No chart images)
         if chart_insights:
-            story.append(Paragraph("3. VISUAL ANALYSIS & INSIGHTS", section_title))
+            story.append(Paragraph("3. VISUAL ANALYSIS & INSIGHTS", styles['Heading2']))
             story.append(Spacer(1, 10))
             
-            for i, (chart, chart_type, columns, insight) in enumerate(chart_insights):
-                # Add chart to PDF
-                try:
-                    # Convert Plotly chart to image
-                    img_bytes = pio.to_image(chart, format='png', width=800, height=500)
-                    img_buffer = BytesIO(img_bytes)
-                    img = Image(img_buffer, width=6*inch, height=4*inch)
-                    
-                    # Add chart title
-                    story.append(Paragraph(f"Chart {i+1}: {chart_type.upper()} - {', '.join(columns)}", styles['Heading3']))
-                    story.append(Spacer(1, 5))
-                    
-                    # Add the chart image
-                    story.append(img)
-                    story.append(Spacer(1, 10))
-                    
-                    # Add insights
-                    story.append(Paragraph("Key Insights:", styles['Heading4']))
-                    insight_paragraphs = insight.split('\n')
-                    for para in insight_paragraphs:
-                        if para.strip() and len(para.strip()) > 10:
-                            story.append(Paragraph(f"• {para.strip().replace('**', '')}", styles['Normal']))
-                    
-                    story.append(Spacer(1, 15))
-                    
-                    # Add page break after every 2 charts
-                    if (i + 1) % 2 == 0:
-                        story.append(PageBreak())
-                        
-                except Exception as e:
-                    story.append(Paragraph(f"Chart could not be displayed: {str(e)}", styles['Normal']))
-                    story.append(Spacer(1, 10))
+            for i, (chart, chart_type, columns, insight) in enumerate(chart_insights[:4]):  # Limit to 4 charts
+                story.append(Paragraph(f"Visualization {i+1}: {chart_type.upper()} - {', '.join(columns)}", styles['Heading3']))
+                story.append(Spacer(1, 5))
+                
+                # Add insights only (no chart images for speed)
+                story.append(Paragraph("Key Insights:", styles['Heading4']))
+                insight_lines = insight.split('\n')
+                for line in insight_lines:
+                    if line.strip() and len(line.strip()) > 5:
+                        clean_line = line.strip().replace('**', '')
+                        story.append(Paragraph(f"• {clean_line}", styles['Normal']))
+                
+                story.append(Spacer(1, 15))
         
         # 4. RECOMMENDATIONS
-        story.append(PageBreak())  # New page for recommendations
-        story.append(Paragraph("4. RECOMMENDATIONS", section_title))
+        story.append(Paragraph("4. RECOMMENDATIONS", styles['Heading2']))
         story.append(Spacer(1, 10))
         
         recommendations = [
@@ -242,9 +209,7 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
             "Consider the insights from visual analysis for decision making",
             "Use correlation findings for predictive modeling opportunities",
             "Monitor key metrics over time for trend analysis",
-            "Validate findings with domain experts where applicable",
-            "Consider collecting additional data for underrepresented categories",
-            "Implement data validation rules to maintain data quality"
+            "Validate findings with domain experts where applicable"
         ]
         
         for i, rec in enumerate(recommendations, 1):
@@ -259,7 +224,7 @@ def generate_comprehensive_pdf_report(profile, chart_insights, df):
         return buffer.getvalue()
         
     except Exception as e:
-        st.error(f"Error generating PDF: {str(e)}")
+        print(f"PDF generation error: {e}")
         return None
 
 def display_pdf_viewer(pdf_data):
@@ -281,7 +246,6 @@ def display_pdf_viewer(pdf_data):
 # App title
 st.markdown('<h1 class="main-header">Automated Data Analysis Platform</h1>', unsafe_allow_html=True)
 
-# Stable Navigation using a different approach
 def main():
     # Define pages
     pages = {
@@ -297,26 +261,19 @@ def main():
     st.sidebar.title("Navigation")
     st.sidebar.markdown('<div class="nav-container">', unsafe_allow_html=True)
     
-    # Check if navigation was triggered in this run
-    navigation_handled = False
+    # Create navigation buttons with unique keys
+    current_page = st.session_state.current_page
     
-    # Create navigation buttons
     for page_name, page_title in pages.items():
-        # Use a unique key for each button
-        if st.sidebar.button(page_name, key=f"nav_{page_name}", use_container_width=True):
-            # Update session state
-            st.session_state.current_page = page_name
-            st.session_state.view_pdf_report = False
-            st.session_state.navigation_triggered = True
-            navigation_handled = True
+        # Create a button for each page
+        if st.sidebar.button(page_name, key=f"nav_{page_name.replace(' ', '_')}", use_container_width=True):
+            if page_name != current_page:
+                st.session_state.current_page = page_name
+                st.session_state.view_pdf_report = False
+                st.rerun()
     
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
     st.sidebar.markdown("---")
-    
-    # If navigation was triggered, rerun once
-    if st.session_state.navigation_triggered and not navigation_handled:
-        st.session_state.navigation_triggered = False
-        st.rerun()
     
     # Get current page
     app_mode = st.session_state.current_page
@@ -363,6 +320,10 @@ def render_data_upload():
             st.session_state.view_pdf_report = False
             st.session_state.qa_system = None
             st.session_state.advanced_charts = None
+            st.session_state.charts_generated = False
+            st.session_state.chart_insights = None
+            st.session_state.report_status = "ready"
+            st.session_state.pdf_data = None
             
             st.success("File uploaded successfully!")
             st.write(f"Dataset Shape: {df.shape[0]} rows, {df.shape[1]} columns")
@@ -379,11 +340,28 @@ def render_data_upload():
         st.success(f"File already loaded: {st.session_state.file_name}")
         st.write(f"Dataset Shape: {st.session_state.df.shape[0]} rows, {st.session_state.df.shape[1]} columns")
         
-        if st.button("Clear Current File & Upload New"):
-            for key in list(st.session_state.keys()):
-                if key not in ['current_page', 'navigation_triggered']:
+        # Use a unique key for the clear button to avoid conflicts
+        if st.button("Clear Current File & Upload New", key="clear_file_btn"):
+            # Only reset data-related session state, not navigation-related
+            data_keys_to_reset = [
+                'df', 'processed', 'data_processor', 'profile_report', 
+                'file_uploaded', 'file_name', 'generated_report', 'report_generated',
+                'view_report', 'cleaned_df', 'view_pdf_report', 'qa_system',
+                'advanced_charts', 'charts_generated', 'chart_insights', 
+                'pdf_data', 'report_status'
+            ]
+            
+            for key in data_keys_to_reset:
+                if key in st.session_state:
                     st.session_state[key] = None
-            initialize_session_state()
+            
+            # Re-initialize the data processor with empty state
+            st.session_state.data_processor = None
+            st.session_state.file_uploaded = False
+            st.session_state.charts_generated = False
+            st.session_state.report_status = "ready"
+            
+            st.success("File cleared! You can now upload a new file.")
             st.rerun()
 
 def render_data_profiling():
@@ -480,58 +458,73 @@ def render_visualization():
         show_advanced = st.sidebar.checkbox("Show Advanced Charts", value=True)
         max_charts = st.sidebar.slider("Maximum Charts to Display", 3, 10, 6)
         
-        try:
-            chart_gen = ChartGenerator(df)
-            insight_gen = InsightGenerator(df)
-            
-            with st.spinner("Generating visualizations..."):
-                # Generate basic charts
-                basic_charts = chart_gen.generate_all_charts()
+        # Check if we need to generate charts
+        if not st.session_state.charts_generated or st.sidebar.button("Regenerate Charts"):
+            try:
+                chart_gen = ChartGenerator(df)
+                insight_gen = InsightGenerator(df)
                 
-                # Generate advanced charts if enabled
-                advanced_charts = []
-                if show_advanced:
-                    advanced_charts = chart_gen.generate_advanced_charts()
-                
-                all_charts = basic_charts + advanced_charts
-                
-                if all_charts:
-                    # Display charts with tabs for better organization
-                    tab1, tab2 = st.tabs(["Basic Charts", "Advanced Charts"])
+                with st.spinner("Generating visualizations..."):
+                    # Generate basic charts
+                    basic_charts = chart_gen.generate_all_charts()
                     
-                    with tab1:
-                        st.subheader("Basic Analytical Charts")
-                        for i, (chart, chart_type, columns) in enumerate(basic_charts[:max_charts//2]):
-                            st.plotly_chart(chart, use_container_width=True)
+                    # Generate advanced charts if enabled
+                    advanced_charts = []
+                    if show_advanced:
+                        advanced_charts = chart_gen.generate_advanced_charts()
+                    
+                    all_charts = basic_charts + advanced_charts
+                    
+                    if all_charts:
+                        # Store charts for report generation
+                        chart_insights = []
+                        for chart, chart_type, columns in all_charts[:max_charts]:
                             insight = insight_gen.generate_insight(chart_type, columns)
+                            chart_insights.append((chart, chart_type, columns, insight))
+                        
+                        st.session_state.chart_insights = chart_insights
+                        st.session_state.charts_generated = True
+                        st.success(f"Generated {len(chart_insights)} charts!")
+                    else:
+                        st.info("No charts could be generated with the current data.")
+            except Exception as e:
+                st.error(f"Error generating visualizations: {str(e)}")
+        
+        # Display charts if available
+        if st.session_state.chart_insights:
+            # Display charts with tabs for better organization
+            tab1, tab2 = st.tabs(["Basic Charts", "Advanced Charts"])
+            
+            with tab1:
+                st.subheader("Basic Analytical Charts")
+                basic_shown = 0
+                for i, (chart, chart_type, columns, insight) in enumerate(st.session_state.chart_insights):
+                    if chart_type in ['distribution', 'categorical', 'correlation', 'relationship'] and basic_shown < max_charts//2:
+                        st.plotly_chart(chart, use_container_width=True)
+                        with st.expander(f"Insights for {chart_type}"):
+                            st.write(insight)
+                        st.markdown("---")
+                        basic_shown += 1
+            
+            with tab2:
+                st.subheader("Advanced Visualizations")
+                if show_advanced:
+                    advanced_shown = 0
+                    for i, (chart, chart_type, columns, insight) in enumerate(st.session_state.chart_insights):
+                        if chart_type not in ['distribution', 'categorical', 'correlation', 'relationship'] and advanced_shown < max_charts//2:
+                            st.plotly_chart(chart, use_container_width=True)
                             with st.expander(f"Insights for {chart_type}"):
                                 st.write(insight)
                             st.markdown("---")
+                            advanced_shown += 1
                     
-                    with tab2:
-                        st.subheader("Advanced Visualizations")
-                        if advanced_charts:
-                            for i, (chart, chart_type, columns) in enumerate(advanced_charts[:max_charts//2]):
-                                st.plotly_chart(chart, use_container_width=True)
-                                insight = insight_gen.generate_insight(chart_type, columns)
-                                with st.expander(f"Insights for {chart_type}"):
-                                    st.write(insight)
-                                st.markdown("---")
-                        else:
-                            st.info("Enable 'Show Advanced Charts' in the sidebar to see advanced visualizations.")
-                    
-                    # Store charts for report generation
-                    chart_insights = []
-                    for chart, chart_type, columns in all_charts[:max_charts]:
-                        insight = insight_gen.generate_insight(chart_type, columns)
-                        chart_insights.append((chart, chart_type, columns, insight))
-                    
-                    st.session_state.chart_insights = chart_insights
-                    
+                    if advanced_shown == 0:
+                        st.info("No advanced charts available. Try enabling 'Show Advanced Charts' and regenerating.")
                 else:
-                    st.info("No charts could be generated with the current data.")
-        except Exception as e:
-            st.error(f"Error generating visualizations: {str(e)}")
+                    st.info("Enable 'Show Advanced Charts' in the sidebar to see advanced visualizations.")
+        else:
+            st.info("Click 'Regenerate Charts' in the sidebar to generate visualizations.")
+            
     else:
         st.warning("Please upload a dataset first.")
 
@@ -629,106 +622,95 @@ def render_report_generation():
     if st.session_state.df is not None:
         st.info("This will generate a comprehensive PDF report containing all data profiling information, visualizations, and insights.")
         
-        # Report options
-        col1, col2 = st.columns(2)
+        # Check if we have charts ready
+        if st.session_state.chart_insights is None:
+            st.warning("Please generate visualizations first in the Visualization section to include charts in the report.")
+            return
         
-        with col1:
-            if st.button("Generate Comprehensive Report", use_container_width=True, 
-                        disabled=st.session_state.report_status == "generating"):
-                st.session_state.report_status = "generating"
-                st.session_state.view_pdf_report = False
+        # Initialize PDF generation state
+        if 'pdf_generation_in_progress' not in st.session_state:
+            st.session_state.pdf_generation_in_progress = False
+        if 'pdf_generated' not in st.session_state:
+            st.session_state.pdf_generated = False
         
-        # Generate comprehensive report
-        if st.session_state.report_status == "generating":
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
+        # Generate PDF button
+        if not st.session_state.pdf_generation_in_progress and not st.session_state.pdf_generated:
+            if st.button("Generate PDF Report", use_container_width=True, type="primary", key="generate_pdf_btn"):
+                st.session_state.pdf_generation_in_progress = True
+                st.session_state.pdf_generated = False
+        
+        # PDF generation process
+        if st.session_state.pdf_generation_in_progress:
             try:
-                df = st.session_state.cleaned_df if st.session_state.cleaned_df is not None else st.session_state.df
-                
-                # Step 1: Ensure profile report exists
-                status_text.text("Collecting data profile...")
-                progress_bar.progress(25)
-                if st.session_state.profile_report is None:
-                    data_processor = DataProcessor(df)
-                    st.session_state.profile_report = data_processor.generate_data_profile()
-                
-                # Step 2: Generate or get chart insights
-                status_text.text("Preparing visualizations and insights...")
-                progress_bar.progress(50)
-                if st.session_state.chart_insights is None:
-                    chart_gen = ChartGenerator(df)
-                    insight_gen = InsightGenerator(df)
-                    charts = chart_gen.generate_all_charts()[:4]
+                with st.spinner("Generating PDF report... Please wait."):
+                    start_time = time.time()
+                    df = st.session_state.cleaned_df if st.session_state.cleaned_df is not None else st.session_state.df
                     
-                    chart_insights = []
-                    for chart, chart_type, columns in charts:
-                        insight = insight_gen.generate_insight(chart_type, columns)
-                        chart_insights.append((chart, chart_type, columns, insight))
-                    st.session_state.chart_insights = chart_insights
-                
-                # Step 3: Generate comprehensive PDF
-                status_text.text("Creating comprehensive PDF report...")
-                progress_bar.progress(75)
-                pdf_bytes = generate_comprehensive_pdf_report(
-                    st.session_state.profile_report, 
-                    st.session_state.chart_insights, 
-                    df
-                )
-                
-                if pdf_bytes:
-                    st.session_state.pdf_data = pdf_bytes
-                    st.session_state.report_status = "completed"
-                    status_text.text("Report generated successfully!")
-                    progress_bar.progress(100)
-                    time.sleep(1)
-                else:
-                    st.session_state.report_status = "error"
-                    st.error("Failed to generate PDF report")
+                    # Ensure profile report exists
+                    if st.session_state.profile_report is None:
+                        data_processor = DataProcessor(df)
+                        st.session_state.profile_report = data_processor.generate_data_profile()
                     
+                    # Generate PDF without charts first (fast)
+                    pdf_bytes = generate_pdf(
+                        st.session_state.profile_report, 
+                        st.session_state.chart_insights, 
+                        df
+                    )
+                    
+                    if pdf_bytes:
+                        st.session_state.pdf_data = pdf_bytes
+                        st.session_state.pdf_generation_in_progress = False
+                        st.session_state.pdf_generated = True
+                        end_time = time.time()
+                        st.success(f"PDF Report generated successfully in {end_time - start_time:.2f} seconds!")
+                    else:
+                        st.error("Failed to generate PDF report")
+                        st.session_state.pdf_generation_in_progress = False
+                        
             except Exception as e:
-                st.session_state.report_status = "error"
                 st.error(f"Error generating report: {str(e)}")
+                st.session_state.pdf_generation_in_progress = False
         
-        # Show report actions
-        if st.session_state.report_status == "completed" and st.session_state.pdf_data is not None:
-            st.success("Comprehensive report generation completed!")
+        # Show report actions when completed
+        if st.session_state.pdf_generated and st.session_state.pdf_data is not None:
+            st.subheader("Report Ready")
             
             # Action buttons
-            button_col1, button_col2 = st.columns(2)
+            col1, col2 = st.columns(2)
             
-            with button_col1:
+            with col1:
                 st.download_button(
                     label="Download PDF Report",
                     data=st.session_state.pdf_data,
-                    file_name=f"comprehensive_analysis_report_{time.strftime('%Y%m%d_%H%M%S')}.pdf",
+                    file_name=f"analysis_report_{time.strftime('%Y%m%d_%H%M%S')}.pdf",
                     mime="application/pdf",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="download_pdf"
                 )
             
-            with button_col2:
-                if st.button("View PDF Report", use_container_width=True):
+            with col2:
+                if st.button("View Report", use_container_width=True, key="view_report"):
                     st.session_state.view_pdf_report = True
+            
+            # Generate new report button
+            if st.button("Generate New Report", key="new_report"):
+                st.session_state.pdf_generated = False
+                st.session_state.view_pdf_report = False
+                st.session_state.pdf_data = None
+                st.rerun()
             
             # PDF viewer
             if st.session_state.view_pdf_report:
                 st.subheader("PDF Report Preview")
-                st.info("Use the download button above to save the full PDF report.")
                 display_pdf_viewer(st.session_state.pdf_data)
         
-        elif st.session_state.report_status == "generating":
-            st.info("Generating comprehensive report... This may take a moment.")
-        
-        elif st.session_state.report_status == "error":
-            st.error("Report generation failed. Please try again.")
-            if st.button("Reset Report Generator"):
-                st.session_state.report_status = "ready"
-        
-        elif st.session_state.report_status == "ready":
-            st.info("Click the button above to generate a comprehensive PDF report with all data analysis results.")
+        # Initial state
+        elif not st.session_state.pdf_generation_in_progress and not st.session_state.pdf_generated:
+            st.info("Click the button above to generate a comprehensive PDF report.")
+            
     else:
         st.warning("Please upload a dataset first from the Data Upload section.")
 
-# Run the main function
 if __name__ == "__main__":
     main()
