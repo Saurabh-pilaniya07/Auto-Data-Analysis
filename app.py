@@ -1,12 +1,13 @@
+import sys
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-from utils.data_processing import DataProcessor
-from utils.visualization import ChartGenerator
-from utils.insights import InsightGenerator
-from utils.qa_system import QASystem
-from utils.auto_ml import AutoML
+from data_processing import DataProcessor
+from visualization import ChartGenerator
+from insights import InsightGenerator
+from qa_system import QASystem
+from auto_ml import AutoML
 import tempfile
 import base64
 from io import BytesIO, StringIO
@@ -714,3 +715,4 @@ def render_report_generation():
 
 if __name__ == "__main__":
     main()
+
