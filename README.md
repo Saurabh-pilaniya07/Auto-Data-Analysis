@@ -4,17 +4,17 @@ Instant data quality assessment and statistics Smart Visualizations: AI-generate
 
 ## Key Features
 
-Data Profiling & Quality Check – Automatic statistics, missing values, and anomaly detection.
-Interactive Visualizations – Advanced, dynamic charts for deeper insights.
-AI Q&A (Google Gemini) – Ask natural language questions and get instant answers.
-Automated Machine Learning – Train and evaluate ML models with minimal effort.
-Professional Reports – Export results as well-structured PDF reports.
+1.) Data Profiling & Quality Check – Automatic statistics, missing values, and anomaly detection.
+2.) Interactive Visualizations – Advanced, dynamic charts for deeper insights.
+3.) AI Q&A (Google Gemini) – Ask natural language questions and get instant answers.
+4.) Automated Machine Learning – Train and evaluate ML models with minimal effort.
+5.) Professional Reports – Export results as well-structured PDF reports.
 
 ## How It Works
 
-Upload Data – Import CSV/Excel files.
-Explore & Clean – Perform automatic data cleaning and profiling.
-Visualize – Generate interactive charts and dashboards.
-Ask Questions – Get AI-powered answers about your dataset.
-Run AutoML – Build predictive models automatically.
-Download Report – Export a comprehensive PDF with insights and results.
+1.) Upload Data – Import CSV/Excel files.
+2.) Explore & Clean – Perform automatic data cleaning and profiling.
+3.) Visualize – Generate interactive charts and dashboards.
+4.) Ask Questions – Get AI-powered answers about your dataset.
+5.) Run AutoML – Build predictive models automatically.
+6.) Download Report – Export a comprehensive PDF with insights and results.
